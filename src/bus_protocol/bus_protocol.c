@@ -7,18 +7,19 @@ typedef enum {
     END_FRAME_BYTE = 'E'
 } frame_delimiter_t;
 
-void bus_protocol_packet_encode(packet_type_t packet_type,
-                                const uint8_t *data,
-                                const uint8_t data_length,
-                                uint8_t *packet,
-                                uint8_t *packet_length) 
+void bus_protocol_packet_encode(
+    const packet_type_t packet_type,
+    const uint8_t *data,
+    const uint8_t data_length,
+    uint8_t *packet,
+    uint8_t *packet_length) 
 {
     *packet_length = 0;
     
     packet[*packet_length] = START_FRAME_BYTE;
     (*packet_length)++;
     
-    memcpy(packet[*packet_length], data, data_length);
+    memcpy(&packet[*packet_length], data, data_length);
     (*packet_length) += data_length;
 
     packet[*packet_length] = END_FRAME_BYTE;
@@ -26,18 +27,18 @@ void bus_protocol_packet_encode(packet_type_t packet_type,
 }
 
 packet_type_t bus_protocol_packet_decode(
-    uint8_t *packet,
-    uint8_t *packet_length, 
+    const uint8_t *packet,
+    const uint8_t packet_length, 
     uint8_t *data,
     uint8_t *data_length)
 {
     packet_type_t ret = BUS_PROTOCOL_PACKET_TYPE_UNKNOWN;
 
-    if (packet[0] == START_FRAME_BYTE && packet[*packet_length] == END_FRAME_BYTE) {
+    if (packet[0] == START_FRAME_BYTE && packet[packet_length-1] == END_FRAME_BYTE) {
         ret = packet[1];
-        memcpy(data, &packet[2], *packet_length-3);
+        memcpy(data, &packet[2], packet_length-3);
 
-        *data_length = *packet_length - 3;
+        *data_length = packet_length - 3;
     }
 
     return ret;
@@ -64,8 +65,8 @@ void bus_protocol_transmit_request_encode(
 }
 
 board_id_t bus_protocol_transmit_request_decode(
-    uint8_t *packet, 
-    uint8_t packet_length)
+    const uint8_t *packet, 
+    const uint8_t packet_length)
 {
     return bus_protocol_transmit_grant_decode(packet, packet_length);
 }
@@ -91,8 +92,8 @@ void bus_protocol_transmit_grant_encode(
 }
 
 board_id_t bus_protocol_transmit_grant_decode(
-    uint8_t *packet, 
-    uint8_t packet_length)
+    const uint8_t *packet, 
+    const uint8_t packet_length)
 {
     return packet_length == 1 && packet[0] < BUS_PROTOCOL_BOARD_ID_UNKNOWN? 
             packet[0] : BUS_PROTOCOL_BOARD_ID_UNKNOWN;
@@ -147,7 +148,7 @@ uint8_t bus_protocol_data_send_decode(
 {
     uint8_t p_len = 0;
 
-    if (packet[0] == START_FRAME_BYTE && packet[packet_length] == END_FRAME_BYTE) {
+    if (packet[0] == START_FRAME_BYTE && packet[packet_length-1] == END_FRAME_BYTE) {
         memcpy(board_id, &packet[p_len], sizeof(*board_id));
         p_len++;
 

@@ -19,9 +19,20 @@ typedef enum {
     BUS_PROTOCOL_PACKET_TYPE_UNKNOWN = 0xFF
 } packet_type_t;
 
-packet_type_t bus_protocol_packet_decode(
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void bus_protocol_packet_encode(
+    const packet_type_t packet_type,
+    const uint8_t *data,
+    const uint8_t data_length,
     uint8_t *packet,
-    uint8_t *packet_length, 
+    uint8_t *packet_length);
+
+packet_type_t bus_protocol_packet_decode(
+    const uint8_t *packet,
+    const uint8_t packet_length, 
     uint8_t *data,
     uint8_t *data_length);
 
@@ -31,18 +42,17 @@ void bus_protocol_transmit_request_encode(
     uint8_t *packet_length);
 
 board_id_t bus_protocol_transmit_request_decode(
-    uint8_t *packet, 
-    uint8_t packet_length);
+    const uint8_t *packet, 
+    const uint8_t packet_length);
 
 void bus_protocol_transmit_grant_encode(
-    const board_id_t board_id,
-    const uint8_t grant,
+    const board_id_t board_id, 
     uint8_t *packet, 
     uint8_t *packet_length);
 
 board_id_t bus_protocol_transmit_grant_decode(
-    uint8_t *packet, 
-    uint8_t packet_length);
+    const uint8_t *packet, 
+    const uint8_t packet_length);
 
 void bus_protocol_data_send_encode(
     const board_id_t board_id, 
@@ -63,5 +73,9 @@ uint8_t bus_protocol_data_send_decode(
     float *dht_hum,
     const uint8_t *packet,
     const uint8_t packet_length);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // __BUS_PROTOCOL__H__
