@@ -6,15 +6,20 @@
 
 #include <bus_protocol/bus_protocol.h>
 
+#include <SoftwareSerial.h>
+
 #define BUS_PROTOCOL_TRANSMIT_RETRIES       5
 #define BUS_PROTOCOL_MAX_DATA_SIZE          32
+#define DEBUG_SERIAL_RX_PIN                 2
+#define DEBUG_SERIAL_TX_PIN                 3
 
 #define BAUDRATE                            115200
 #define DHT22_PIN                           A6
 
-#define DATA_SEND_PERIOD                    60000
+#define DATA_SEND_PERIOD                    2000
 
-extern HardwareSerial Serial;
+//extern HardwareSerial Serial;
+SoftwareSerial debug(DEBUG_SERIAL_RX_PIN, DEBUG_SERIAL_TX_PIN);
 
 DHT dht(DHT22_PIN, DHT22);
 
@@ -37,12 +42,12 @@ sensors_data_t sensors_data;
 
 void setup() {
     Serial.begin(BAUDRATE);
-
+    debug.begin(BAUDRATE);
     //pinMode(DHT22_PIN, INPUT);
 
     dht.begin();
 
-    Serial.println(F("DHTxx test!"));
+    //Serial.println(F("DHTxx test!"));
 }
 
 void loop() {
@@ -50,6 +55,7 @@ void loop() {
 
     // get permission to send
     if (request_send_data(BUS_PROTOCOL_BOARD_ID_WIS)) {
+        debug.println(F("ESP TRANSMIT GRANT"));
         send_data(&sensors_data);
     }
 
@@ -67,15 +73,15 @@ void read_sensors_data(sensors_data_t *sensors_data) {
     sensors_data->dht_hum = h;
 
     if (isnan(h) || isnan(t)) {
-      Serial.println(F("Failed to read from DHT sensor!"));
+      debug.println(F("Failed to read from DHT sensor!"));
       return;
     }
 
-    Serial.print(F("Humidity: "));
-    Serial.print(h);
-    Serial.print(F("%  Temperature: "));
-    Serial.print(t);
-    Serial.print(F("°C "));
+    debug.print(F("Humidity: "));
+    debug.print(h);
+    debug.print(F("%  Temperature: "));
+    debug.print(t);
+    debug.print(F("°C "));
 }
 
 uint8_t send_data(const sensors_data_t *sensors_data) {
@@ -107,6 +113,7 @@ uint8_t send_data(const sensors_data_t *sensors_data) {
                                         packet_buffer, 
                                         &packet_buffer_length) == BUS_PROTOCOL_PACKET_TYPE_ACK) 
         {
+            debug.println("ESP ACK");
             ret = 1;
         } else {
             retries++;
@@ -127,9 +134,10 @@ uint8_t request_send_data(const board_id_t board_id) {
     uint8_t packet_buffer_length = 0;
     
     bus_protocol_transmit_request_encode(board_id, packet_buffer, &packet_buffer_length);
-
+    
     do {
         Serial.write(packet_buffer, packet_buffer_length);
+        debug.print(F("WIS TRANSMIT REQUEST"));
 
         // wait for grant
         if (bus_protocol_serial_receive(packet_buffer, &packet_buffer_length)) {
@@ -138,6 +146,8 @@ uint8_t request_send_data(const board_id_t board_id) {
                 bus_protocol_transmit_grant_decode(packet_buffer, packet_buffer_length) == board_id) 
             {
                 granted = 1;
+            } else {
+                debug.println(F("ESP TRANSMIT NOT GRANT"));
             }
         } else {
             retries++;
@@ -151,13 +161,19 @@ uint8_t request_send_data(const board_id_t board_id) {
 uint8_t bus_protocol_serial_receive(uint8_t *data, uint8_t *data_length) {
     *data_length = 0;
     uint32_t start_millis = millis();
-    while(start_millis + BUS_PROTOCOL_MAX_WAITING_TIME < millis() && *data_length < BUS_PROTOCOL_MAX_DATA_SIZE) {
+    while(start_millis + BUS_PROTOCOL_MAX_WAITING_TIME > millis() && *data_length < BUS_PROTOCOL_MAX_DATA_SIZE) {
         if (Serial.available()) {
             data[(*data_length)++] = Serial.read();
             // update wating time
             start_millis = millis();
         }
     }
+
+    debug.print(F("Received message: "));
+    for (uint8_t i = 0; i < *data_length; i++) {
+        debug.write(data[i]);
+    }
+    debug.println();
 
     return *data_length;
 }

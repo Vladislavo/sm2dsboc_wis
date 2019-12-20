@@ -18,6 +18,9 @@ void bus_protocol_packet_encode(
     
     packet[*packet_length] = START_FRAME_BYTE;
     (*packet_length)++;
+
+    packet[*packet_length] = packet_type;
+    (*packet_length)++;
     
     memcpy(&packet[*packet_length], data, data_length);
     (*packet_length) += data_length;
@@ -125,6 +128,9 @@ void bus_protocol_data_send_encode(
 
     memcpy(&packet[*packet_length], &soil_moisture_0, sizeof(soil_moisture_0));
     (*packet_length) += sizeof(soil_moisture_0);
+
+    memcpy(&packet[*packet_length], &soil_moisture_1, sizeof(soil_moisture_1));
+    (*packet_length) += sizeof(soil_moisture_1);
 
     memcpy(&packet[*packet_length], &dht_temp, sizeof(dht_temp));
     (*packet_length) += sizeof(dht_temp);
