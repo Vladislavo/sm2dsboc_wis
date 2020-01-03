@@ -14,9 +14,9 @@
 #define DEBUG_SERIAL_TX_PIN                 3
 
 #define BAUDRATE                            115200
-#define DHT22_PIN                           A6
+#define DHT22_PIN                           A0
 
-#define DATA_SEND_PERIOD                    2000
+#define DATA_SEND_PERIOD                    30000
 
 //extern HardwareSerial Serial;
 SoftwareSerial debug(DEBUG_SERIAL_RX_PIN, DEBUG_SERIAL_TX_PIN);
@@ -45,27 +45,26 @@ uint8_t bus_protocol_serial_receive(uint8_t *data, uint8_t *data_length);
 void sleep(const uint32_t ms);
 
 sensors_data_t sensors_data;
+uint16_t r_del = 0;
 
 void setup() {
     Serial.begin(BAUDRATE);
     debug.begin(BAUDRATE);
-    //pinMode(DHT22_PIN, INPUT);
 
     dht.begin();
 
-    //Serial.println(F("DHTxx test!"));
+
 }
 
 void loop() {
     read_sensors_data(&sensors_data);
 
-    // get permission to send
-    if (request_send_data(BUS_PROTOCOL_BOARD_ID_WIS)) {
-        debug.println(F("ESP TRANSMIT GRANT"));
-        send_data(&sensors_data);
+    while (!send_data(&sensors_data)) {
+        r_del = rand() % 1000;
+        delay(r_del); 
     }
 
-    sleep(DATA_SEND_PERIOD);
+    sleep(DATA_SEND_PERIOD + (rand() % 2000));
 }
 
 void read_sensors_data(sensors_data_t *sensors_data) {
