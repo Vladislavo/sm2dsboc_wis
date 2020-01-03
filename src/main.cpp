@@ -24,6 +24,8 @@ SoftwareSerial debug(DEBUG_SERIAL_RX_PIN, DEBUG_SERIAL_TX_PIN);
 DHT dht(DHT22_PIN, DHT22);
 
 typedef struct {
+    board_id_t board_id = BUS_PROTOCOL_BOARD_ID_WIS;
+    uint32_t utc = 0;
     uint16_t soil_moisture_0 = 0;
     uint16_t soil_moisture_1 = 0;
     float dht_temp = 0;
@@ -33,6 +35,10 @@ typedef struct {
 void read_sensors_data(sensors_data_t *sensors_data);
 uint8_t send_data(const sensors_data_t *sensors_data);
 
+void bus_protocol_sensor_data_encode(
+    const sensors_data_t *sensor_data,
+    uint8_t *packet,
+    uint8_t *packet_length);
 uint8_t request_send_data(const board_id_t board_id);
 uint8_t bus_protocol_serial_receive(uint8_t *data, uint8_t *data_length);
 
@@ -94,14 +100,10 @@ uint8_t send_data(const sensors_data_t *sensors_data) {
     // send
     // TODO: integrate time
     uint32_t utc = 0;
-    bus_protocol_data_send_encode(BUS_PROTOCOL_BOARD_ID_WIS,
-                                  utc,
-                                  sensors_data->soil_moisture_0,
-                                  sensors_data->soil_moisture_1,
-                                  sensors_data->dht_temp,
-                                  sensors_data->dht_hum,
-                                  packet_buffer,
-                                  &packet_buffer_length);
+    bus_protocol_data_send_encode(  (uint8_t *) sensors_data,
+                                    sizeof(*sensors_data),
+                                    packet_buffer,
+                                    &packet_buffer_length);
 
     do {
         Serial.write(packet_buffer, packet_buffer_length);
