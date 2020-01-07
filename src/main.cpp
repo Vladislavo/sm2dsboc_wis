@@ -8,6 +8,10 @@
 
 #include <SoftwareSerial.h>
 
+#include "util/log/log.h"
+
+#define LOG_LEVEL                           LOG_LEVEL_NONE
+
 #define BUS_PROTOCOL_TRANSMIT_RETRIES       5
 #define BUS_PROTOCOL_MAX_DATA_SIZE          32
 #define DEBUG_SERIAL_RX_PIN                 2
@@ -16,7 +20,7 @@
 #define BAUDRATE                            115200
 #define DHT22_PIN                           A0
 
-#define DATA_SEND_PERIOD                    30000
+#define DATA_SEND_PERIOD                    60000
 
 //extern HardwareSerial Serial;
 SoftwareSerial debug(DEBUG_SERIAL_RX_PIN, DEBUG_SERIAL_TX_PIN);
@@ -33,7 +37,7 @@ typedef struct {
 } sensors_data_t;
 
 void read_sensors_data(sensors_data_t *sensors_data);
-uint8_t send_data(const sensors_data_t *sensors_data);
+uint8_t send_data(const sensors_data_t *sensors_data, const int8_t retries);
 
 void bus_protocol_sensor_data_encode(
     const sensors_data_t *sensor_data,
@@ -52,19 +56,17 @@ void setup() {
     debug.begin(BAUDRATE);
 
     dht.begin();
-
-
+    randomSeed(analogRead(A1));
 }
 
 void loop() {
     read_sensors_data(&sensors_data);
 
-    while (!send_data(&sensors_data)) {
-        r_del = rand() % 1000;
-        delay(r_del); 
+    while (!send_data(&sensors_data, BUS_PROTOCOL_TRANSMIT_RETRIES)) {
+        delay(random(5000)); 
     }
 
-    sleep(DATA_SEND_PERIOD + (rand() % 2000));
+    sleep(DATA_SEND_PERIOD + random(5000));
 }
 
 void read_sensors_data(sensors_data_t *sensors_data) {
@@ -78,20 +80,21 @@ void read_sensors_data(sensors_data_t *sensors_data) {
     sensors_data->dht_hum = h;
 
     if (isnan(h) || isnan(t)) {
-      debug.println(F("Failed to read from DHT sensor!"));
+      LOG_E(F("Failed to read from DHT sensor!"));
       return;
     }
 
-    debug.print(F("Humidity: "));
-    debug.print(h);
-    debug.print(F("%  Temperature: "));
-    debug.print(t);
-    debug.print(F("°C "));
+    LOG_D(F("Humidity: "));
+    LOG_D(h);
+    LOG_D(F("%  Temperature: "));
+    LOG_D(t);
+    LOG_D(F("°C "));
+    LOG_D(F("\n"));
 }
 
-uint8_t send_data(const sensors_data_t *sensors_data) {
+uint8_t send_data(const sensors_data_t *sensors_data, const int8_t retries) {
     uint8_t ret = 0;
-    uint8_t retries = 0;
+    uint8_t retr = 0;
 
     uint8_t packet_buffer[24] = {0};
     uint8_t packet_buffer_length = 0;
@@ -114,13 +117,13 @@ uint8_t send_data(const sensors_data_t *sensors_data) {
                                         packet_buffer, 
                                         &packet_buffer_length) == BUS_PROTOCOL_PACKET_TYPE_ACK) 
         {
-            debug.println("ESP ACK");
+            LOG_D(F("ESP ACK\n"));
             ret = 1;
         } else {
-            retries++;
+            retr++;
         }
 
-    } while(!ret && retries < BUS_PROTOCOL_TRANSMIT_RETRIES);
+    } while(!ret && retr < retries);
 
     return ret;
 }
@@ -138,7 +141,7 @@ uint8_t request_send_data(const board_id_t board_id) {
     
     do {
         Serial.write(packet_buffer, packet_buffer_length);
-        debug.print(F("WIS TRANSMIT REQUEST"));
+        LOG_D(F("WIS TRANSMIT REQUEST\n"));
 
         // wait for grant
         if (bus_protocol_serial_receive(packet_buffer, &packet_buffer_length)) {
@@ -148,7 +151,7 @@ uint8_t request_send_data(const board_id_t board_id) {
             {
                 granted = 1;
             } else {
-                debug.println(F("ESP TRANSMIT NOT GRANT"));
+                LOG_D(F("ESP TRANSMIT NOT GRANT\n"));
             }
         } else {
             retries++;
@@ -170,11 +173,11 @@ uint8_t bus_protocol_serial_receive(uint8_t *data, uint8_t *data_length) {
         }
     }
 
-    debug.print(F("Received message: "));
+    LOG_D(F("Received message: "));
     for (uint8_t i = 0; i < *data_length; i++) {
-        debug.write(data[i]);
+        LOG_D(data[i]);
     }
-    debug.println();
+    LOG_D(F("\n"));
 
     return *data_length;
 }
