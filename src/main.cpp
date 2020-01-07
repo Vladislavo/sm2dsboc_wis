@@ -32,6 +32,7 @@ typedef struct {
     uint32_t utc = 0;
     uint16_t soil_moisture_0 = 0;
     uint16_t soil_moisture_1 = 0;
+    uint16_t soil_moisture_2 = 0;
     float dht_temp = 0;
     float dht_hum = 0;
 } sensors_data_t;
@@ -101,7 +102,6 @@ uint8_t send_data(const sensors_data_t *sensors_data, const int8_t retries) {
 
     // send
     // TODO: integrate time
-    uint32_t utc = 0;
     bus_protocol_data_send_encode(  (uint8_t *) sensors_data,
                                     sizeof(*sensors_data),
                                     packet_buffer,
