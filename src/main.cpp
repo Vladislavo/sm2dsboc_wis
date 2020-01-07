@@ -10,8 +10,6 @@
 
 #include "util/log/log.h"
 
-#define LOG_LEVEL                           LOG_LEVEL_NONE
-
 #define BUS_PROTOCOL_TRANSMIT_RETRIES       5
 #define BUS_PROTOCOL_MAX_DATA_SIZE          32
 #define DEBUG_SERIAL_RX_PIN                 2
@@ -61,34 +59,37 @@ void setup() {
 }
 
 void loop() {
-    read_sensors_data(&sensors_data);
-
-    while (!send_data(&sensors_data, BUS_PROTOCOL_TRANSMIT_RETRIES)) {
+    do {
         delay(random(5000)); 
-    }
+        read_sensors_data(&sensors_data);
+    } while (!send_data(&sensors_data, BUS_PROTOCOL_TRANSMIT_RETRIES));
 
     sleep(DATA_SEND_PERIOD + random(5000));
 }
 
 void read_sensors_data(sensors_data_t *sensors_data) {
+    uint8_t retries = 0;
+
+    sensors_data->board_id = BUS_PROTOCOL_BOARD_ID_WIS;
+
     sensors_data->soil_moisture_0 = analogRead(A1);
     sensors_data->soil_moisture_1 = analogRead(A3);
+    sensors_data->soil_moisture_2 = 0;
 
-    float h = dht.readHumidity();
-    float t = dht.readTemperature();
-
-    sensors_data->dht_temp = t;
-    sensors_data->dht_hum = h;
-
-    if (isnan(h) || isnan(t)) {
-      LOG_E(F("Failed to read from DHT sensor!"));
-      return;
-    }
+    do {
+        sensors_data->dht_temp = dht.readTemperature();
+        sensors_data->dht_hum = dht.readHumidity();
+        if (isnan(sensors_data->dht_temp) || isnan(sensors_data->dht_hum)) {
+            LOG_E(F("Failed to read from DHT sensor!\n"));
+            retries++;
+            delay(100);
+        }
+    } while (isnan(sensors_data->dht_temp) || isnan(sensors_data->dht_hum));
 
     LOG_D(F("Humidity: "));
-    LOG_D(h);
+    LOG_D(sensors_data->dht_hum);
     LOG_D(F("%  Temperature: "));
-    LOG_D(t);
+    LOG_D(sensors_data->dht_temp);
     LOG_D(F("°C "));
     LOG_D(F("\n"));
 }
@@ -172,12 +173,6 @@ uint8_t bus_protocol_serial_receive(uint8_t *data, uint8_t *data_length) {
             start_millis = millis();
         }
     }
-
-    LOG_D(F("Received message: "));
-    for (uint8_t i = 0; i < *data_length; i++) {
-        LOG_D(data[i]);
-    }
-    LOG_D(F("\n"));
 
     return *data_length;
 }
