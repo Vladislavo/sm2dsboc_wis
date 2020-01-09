@@ -84,7 +84,7 @@ void read_sensors_data(sensors_data_t *sensors_data) {
             dht22_read_ctr++;
             delay(100);
         }
-    } while (isnan(sensors_data->dht_temp) || isnan(sensors_data->dht_hum) &&
+    } while ((isnan(sensors_data->dht_temp) || isnan(sensors_data->dht_hum)) &&
              dht22_read_ctr < DHT22_READ_RETRIES);
 
     LOG_D(F("A0: ")); LOG_D(sensors_data->soil_moisture_0);
