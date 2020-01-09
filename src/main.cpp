@@ -17,6 +17,7 @@
 
 #define BAUDRATE                            115200
 #define DHT22_PIN                           A0
+#define DHT22_READ_RETRIES                  20
 
 #define DATA_SEND_PERIOD                    60000
 
@@ -38,8 +39,8 @@ typedef struct {
 void read_sensors_data(sensors_data_t *sensors_data);
 uint8_t send_data(const sensors_data_t *sensors_data, const int8_t retries);
 
-void bus_protocol_sensor_data_encode(
-    const sensors_data_t *sensor_data,
+void bus_protocol_sensor_data_payload_encode(
+    const sensors_data_t *sensors_data,
     uint8_t *packet,
     uint8_t *packet_length);
 uint8_t request_send_data(const board_id_t board_id);
@@ -68,8 +69,7 @@ void loop() {
 }
 
 void read_sensors_data(sensors_data_t *sensors_data) {
-    uint8_t retries = 0;
-
+    uint8_t dht22_read_ctr = 0;
     sensors_data->board_id = BUS_PROTOCOL_BOARD_ID_WIS;
 
     sensors_data->soil_moisture_0 = analogRead(A1);
@@ -81,11 +81,16 @@ void read_sensors_data(sensors_data_t *sensors_data) {
         sensors_data->dht_hum = dht.readHumidity();
         if (isnan(sensors_data->dht_temp) || isnan(sensors_data->dht_hum)) {
             LOG_E(F("Failed to read from DHT sensor!\n"));
-            retries++;
+            dht22_read_ctr++;
             delay(100);
         }
-    } while (isnan(sensors_data->dht_temp) || isnan(sensors_data->dht_hum));
+    } while (isnan(sensors_data->dht_temp) || isnan(sensors_data->dht_hum) &&
+             dht22_read_ctr < DHT22_READ_RETRIES);
 
+    LOG_D(F("A0: ")); LOG_D(sensors_data->soil_moisture_0);
+    LOG_D(F(" A1: ")); LOG_D(sensors_data->soil_moisture_1);
+    LOG_D(F(" A2: ")); LOG_D(sensors_data->soil_moisture_2);
+    LOG_D(F("\n"));
     LOG_D(F("Humidity: "));
     LOG_D(sensors_data->dht_hum);
     LOG_D(F("%  Temperature: "));
@@ -98,13 +103,16 @@ uint8_t send_data(const sensors_data_t *sensors_data, const int8_t retries) {
     uint8_t ret = 0;
     uint8_t retr = 0;
 
-    uint8_t packet_buffer[24] = {0};
+    uint8_t packet_buffer[32] = {0};
     uint8_t packet_buffer_length = 0;
+    uint8_t payload[32] = {0};
+    uint8_t payload_length = 0;
+
+    bus_protocol_sensor_data_payload_encode(sensors_data, payload, &payload_length);
 
     // send
-    // TODO: integrate time
-    bus_protocol_data_send_encode(  (uint8_t *) sensors_data,
-                                    sizeof(*sensors_data),
+    bus_protocol_data_send_encode(  payload,
+                                    payload_length,
                                     packet_buffer,
                                     &packet_buffer_length);
 
@@ -130,7 +138,7 @@ uint8_t send_data(const sensors_data_t *sensors_data, const int8_t retries) {
 }
 
 #define BUS_PROTOCOL_TRANSMIT_GRANT_SIZE  4
-#define BUS_PROTOCOL_MAX_WAITING_TIME     300
+#define BUS_PROTOCOL_MAX_WAITING_TIME     3000
 uint8_t request_send_data(const board_id_t board_id) {
     uint8_t granted = 0;
     uint8_t retries = 0;
@@ -180,4 +188,33 @@ uint8_t bus_protocol_serial_receive(uint8_t *data, uint8_t *data_length) {
 void sleep(uint32_t ms) {
     // future possible employ powerdown functions
     delay(ms);
+}
+
+void bus_protocol_sensor_data_payload_encode(
+    const sensors_data_t *sensors_data,
+    uint8_t *packet,
+    uint8_t *packet_length) 
+{
+    *packet_length = 0;
+
+    packet[*packet_length] = sensors_data->board_id;
+    (*packet_length)++;
+
+    memcpy(&packet[*packet_length], &sensors_data->utc, sizeof(sensors_data->utc));
+    (*packet_length) += sizeof(sensors_data->utc);
+
+    memcpy(&packet[*packet_length], &sensors_data->soil_moisture_0, sizeof(sensors_data->soil_moisture_0));
+    (*packet_length) += sizeof(sensors_data->soil_moisture_0);
+
+    memcpy(&packet[*packet_length], &sensors_data->soil_moisture_1, sizeof(sensors_data->soil_moisture_1));
+    (*packet_length) += sizeof(sensors_data->soil_moisture_1);
+
+    memcpy(&packet[*packet_length], &sensors_data->soil_moisture_2, sizeof(sensors_data->soil_moisture_2));
+    (*packet_length) += sizeof(sensors_data->soil_moisture_2);
+
+    memcpy(&packet[*packet_length], &sensors_data->dht_temp, sizeof(sensors_data->dht_temp));
+    (*packet_length) += sizeof(sensors_data->dht_temp);
+
+    memcpy(&packet[*packet_length], &sensors_data->dht_hum, sizeof(sensors_data->dht_hum));
+    (*packet_length) += sizeof(sensors_data->dht_hum);
 }
