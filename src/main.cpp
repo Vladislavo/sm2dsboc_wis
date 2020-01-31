@@ -4,6 +4,10 @@
 #include <DHT.h>
 #include <DHT_U.h>
 
+#include <Wire.h>
+#include "SHTSensor.h"
+#include <HIHReader.h>
+
 #include <bus_protocol/bus_protocol.h>
 
 #include <SoftwareSerial.h>
@@ -15,25 +19,32 @@
 #define DEBUG_SERIAL_RX_PIN                 2
 #define DEBUG_SERIAL_TX_PIN                 3
 
-#define BAUDRATE                            115200
-#define DHT22_PIN                           A0
-#define DHT22_READ_RETRIES                  20
+#define LED_SERIAL                          DD6
 
-#define DATA_SEND_PERIOD                    60000
+#define BAUDRATE                            115200
+#define DHT22_PIN                           8
+#define DHT22_READ_RETRIES                  100
+
+#define DATA_SEND_PERIOD                    600000
 
 //extern HardwareSerial Serial;
 SoftwareSerial debug(DEBUG_SERIAL_RX_PIN, DEBUG_SERIAL_TX_PIN);
 
 DHT dht(DHT22_PIN, DHT22);
+SHTSensor sht85;
+HIHReader hih8121(0x27);
 
 typedef struct {
     board_id_t board_id = BUS_PROTOCOL_BOARD_ID_WIS;
     uint32_t utc = 0;
     uint16_t soil_moisture_0 = 0;
     uint16_t soil_moisture_1 = 0;
-    uint16_t soil_moisture_2 = 0;
-    float dht_temp = 0;
-    float dht_hum = 0;
+    float dht22_temp = 0;
+    float dht22_hum = 0;
+    float sht85_temp = 0;
+    float sht85_hum = 0;
+    float hih8121_temp = 0;
+    float hih8121_hum = 0;
 } sensors_data_t;
 
 void read_sensors_data(sensors_data_t *sensors_data);
@@ -51,12 +62,21 @@ void sleep(const uint32_t ms);
 sensors_data_t sensors_data;
 uint16_t r_del = 0;
 
+float hum, temp;
+
 void setup() {
     Serial.begin(BAUDRATE);
     debug.begin(BAUDRATE);
+    Wire.begin();
+
+    pinMode(LED_SERIAL, OUTPUT);
+    digitalWrite(LED_SERIAL, LOW);
 
     dht.begin();
     randomSeed(analogRead(A1));
+
+    sht85.init();
+    sht85.setAccuracy(SHTSensor::SHT_ACCURACY_HIGH); // only supported by SHT3x
 }
 
 void loop() {
@@ -74,38 +94,43 @@ void read_sensors_data(sensors_data_t *sensors_data) {
 
     sensors_data->soil_moisture_0 = analogRead(A1);
     sensors_data->soil_moisture_1 = analogRead(A3);
-    sensors_data->soil_moisture_2 = 0;
 
     do {
-        sensors_data->dht_temp = dht.readTemperature();
-        sensors_data->dht_hum = dht.readHumidity();
-        if (isnan(sensors_data->dht_temp) || isnan(sensors_data->dht_hum)) {
+        sensors_data->dht22_temp = dht.readTemperature();
+        sensors_data->dht22_hum = dht.readHumidity();
+        if (isnan(sensors_data->dht22_temp) || isnan(sensors_data->dht22_hum)) {
             LOG_E(F("Failed to read from DHT sensor!\n"));
             dht22_read_ctr++;
             delay(100);
         }
-    } while ((isnan(sensors_data->dht_temp) || isnan(sensors_data->dht_hum)) &&
+    } while ((isnan(sensors_data->dht22_temp) || isnan(sensors_data->dht22_hum)) &&
              dht22_read_ctr < DHT22_READ_RETRIES);
+
+    sht85.readSample();
+    sensors_data->sht85_temp = sht85.getTemperature();
+    sensors_data->sht85_hum = sht85.getHumidity();
+
+    hih8121.read(&sensors_data->hih8121_temp, &sensors_data->hih8121_hum);
 
     LOG_D(F("A0: ")); LOG_D(sensors_data->soil_moisture_0);
     LOG_D(F(" A1: ")); LOG_D(sensors_data->soil_moisture_1);
-    LOG_D(F(" A2: ")); LOG_D(sensors_data->soil_moisture_2);
     LOG_D(F("\n"));
-    LOG_D(F("Humidity: "));
-    LOG_D(sensors_data->dht_hum);
+    LOG_D(F("DHT22 Humidity: "));
+    LOG_D(sensors_data->dht22_hum);
     LOG_D(F("%  Temperature: "));
-    LOG_D(sensors_data->dht_temp);
+    LOG_D(sensors_data->dht22_temp);
     LOG_D(F("°C "));
     LOG_D(F("\n"));
 }
 
 uint8_t send_data(const sensors_data_t *sensors_data, const int8_t retries) {
+    digitalWrite(LED_SERIAL, HIGH);
     uint8_t ret = 0;
     uint8_t retr = 0;
 
-    uint8_t packet_buffer[32] = {0};
+    uint8_t packet_buffer[75] = {0};
     uint8_t packet_buffer_length = 0;
-    uint8_t payload[32] = {0};
+    uint8_t payload[70] = {0};
     uint8_t payload_length = 0;
 
     bus_protocol_sensor_data_payload_encode(sensors_data, payload, &payload_length);
@@ -133,6 +158,8 @@ uint8_t send_data(const sensors_data_t *sensors_data, const int8_t retries) {
         }
 
     } while(!ret && retr < retries);
+
+    digitalWrite(LED_SERIAL, LOW);
 
     return ret;
 }
@@ -209,12 +236,21 @@ void bus_protocol_sensor_data_payload_encode(
     memcpy(&packet[*packet_length], &sensors_data->soil_moisture_1, sizeof(sensors_data->soil_moisture_1));
     (*packet_length) += sizeof(sensors_data->soil_moisture_1);
 
-    memcpy(&packet[*packet_length], &sensors_data->soil_moisture_2, sizeof(sensors_data->soil_moisture_2));
-    (*packet_length) += sizeof(sensors_data->soil_moisture_2);
+    memcpy(&packet[*packet_length], &sensors_data->dht22_temp, sizeof(sensors_data->dht22_temp));
+    (*packet_length) += sizeof(sensors_data->dht22_temp);
 
-    memcpy(&packet[*packet_length], &sensors_data->dht_temp, sizeof(sensors_data->dht_temp));
-    (*packet_length) += sizeof(sensors_data->dht_temp);
+    memcpy(&packet[*packet_length], &sensors_data->dht22_hum, sizeof(sensors_data->dht22_hum));
+    (*packet_length) += sizeof(sensors_data->dht22_hum);
 
-    memcpy(&packet[*packet_length], &sensors_data->dht_hum, sizeof(sensors_data->dht_hum));
-    (*packet_length) += sizeof(sensors_data->dht_hum);
+    memcpy(&packet[*packet_length], &sensors_data->sht85_temp, sizeof(sensors_data->sht85_temp));
+    (*packet_length) += sizeof(sensors_data->sht85_temp);
+
+    memcpy(&packet[*packet_length], &sensors_data->sht85_hum, sizeof(sensors_data->sht85_hum));
+    (*packet_length) += sizeof(sensors_data->sht85_hum);
+
+    memcpy(&packet[*packet_length], &sensors_data->hih8121_temp, sizeof(sensors_data->hih8121_temp));
+    (*packet_length) += sizeof(sensors_data->hih8121_temp);
+
+    memcpy(&packet[*packet_length], &sensors_data->hih8121_hum, sizeof(sensors_data->hih8121_hum));
+    (*packet_length) += sizeof(sensors_data->hih8121_hum);
 }
